@@ -1,0 +1,682 @@
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- ==================== RAYFIELD WINDOW ====================
+
+local Window = Rayfield:CreateWindow({
+	name = "Monster Runners CVI",
+	subtitle = "Rayfield Gen2",
+	sidebarLayout = true,
+})
+
+local MainTab = Window:CreateTab({ name = "Teleports" })
+local VisualsTab = Window:CreateTab({ name = "Visuals & Player" })
+
+-- Exact Coordinates from Screenshots
+local Coords = {
+	ClassesShop = CFrame.new(-175.091644, 4.00318146, 130.09227),
+	ObbyArea = CFrame.new(-171.628098, 4, 198.347961),
+	StartArea = CFrame.new(-136.825104, 4, 161.86731),
+	CustomiserShop = CFrame.new(-136.435562, 4, 134.850464),
+}
+
+local function getRoot(plr)
+	local targetPlr = plr or LocalPlayer
+	local char = targetPlr.Character
+	return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart"))
+end
+
+local function getDistanceStuds(plr)
+	local myRoot = getRoot(LocalPlayer)
+	local pRoot = getRoot(plr)
+	if myRoot and pRoot then
+		return math.floor((pRoot.Position - myRoot.Position).Magnitude)
+	end
+	return nil
+end
+
+local function teleportTo(targetCF)
+	local root = getRoot(LocalPlayer)
+	if root then
+		root.CFrame = targetCF
+	end
+end
+
+-- Teleports to target, fires nearby ProximityPrompt, and returns to original spot
+local function teleportAndPrompt(targetCF, promptKeyword)
+	local root = getRoot(LocalPlayer)
+	if not root then return end
+
+	local savedCF = root.CFrame
+	root.CFrame = targetCF
+	task.wait(0.25)
+
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("ProximityPrompt") and obj.Enabled then
+			local parentPart = obj.Parent:IsA("BasePart") and obj.Parent or obj.Parent:FindFirstChildWhichIsA("BasePart")
+			if parentPart and (parentPart.Position - targetCF.Position).Magnitude <= 18 then
+				local action = (obj.ActionText or ""):lower()
+				local objectText = (obj.ObjectText or ""):lower()
+				if not promptKeyword or action:find(promptKeyword) or objectText:find(promptKeyword) then
+					if typeof(fireproximityprompt) == "function" then
+						fireproximityprompt(obj)
+					else
+						obj:InputHoldBegin()
+						task.wait(obj.HoldDuration + 0.05)
+						obj:InputHoldEnd()
+					end
+					break
+				end
+			end
+		end
+	end
+
+	task.wait(0.2)
+	if getRoot(LocalPlayer) then
+		getRoot(LocalPlayer).CFrame = savedCF
+	end
+end
+
+-- ==================== MONSTER / RUNNER ROLE DETECTION ====================
+
+local function hasMonsterKeyword(text)
+	if type(text) ~= "string" then return false end
+	local low = text:lower()
+	return low:find("monster") or low:find("killer") or low:find("beast") or low:find("hunter") or low:find("slasher") or low:find("fiend")
+end
+
+local function isPlayerMonster(plr)
+	if plr == LocalPlayer then return false end
+
+	if plr.Team and hasMonsterKeyword(plr.Team.Name) then
+		return true
+	end
+
+	for attrName, attrVal in pairs(plr:GetAttributes()) do
+		if hasMonsterKeyword(attrName) and (attrVal == true or hasMonsterKeyword(tostring(attrVal))) then
+			return true
+		end
+	end
+
+	local char = plr.Character
+	if char then
+		for attrName, attrVal in pairs(char:GetAttributes()) do
+			if hasMonsterKeyword(attrName) and (attrVal == true or hasMonsterKeyword(tostring(attrVal))) then
+				return true
+			end
+		end
+
+		for _, desc in ipairs(char:GetDescendants()) do
+			if hasMonsterKeyword(desc.Name) then
+				if desc:IsA("BoolValue") and desc.Value == true then
+					return true
+				elseif desc:IsA("StringValue") and hasMonsterKeyword(desc.Value) then
+					return true
+				elseif desc:IsA("Model") or desc:IsA("Folder") or desc:IsA("Highlight") or desc:IsA("Script") or desc:IsA("LocalScript") then
+					return true
+				end
+			end
+			if desc:IsA("Tool") then
+				return true
+			end
+		end
+	end
+
+	local backpack = plr:FindFirstChild("Backpack")
+	if backpack then
+		for _, tool in ipairs(backpack:GetChildren()) do
+			if tool:IsA("Tool") then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+-- ==================== COMPACT COOL DRAGGABLE TOP HUD ====================
+
+local DANGER_DISTANCE = 45
+
+local existingHud = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("MonsterRunnersTopHUD")
+if existingHud then existingHud:Destroy() end
+
+local hudGui = Instance.new("ScreenGui")
+hudGui.Name = "MonsterRunnersTopHUD"
+hudGui.ResetOnSpawn = false
+hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+hudGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local hudFrame = Instance.new("Frame")
+hudFrame.Name = "TopHudFrame"
+hudFrame.Size = UDim2.fromOffset(312, 78)
+hudFrame.Position = UDim2.new(0.5, -156, 0, 8)
+hudFrame.BackgroundColor3 = Color3.fromRGB(14, 17, 24)
+hudFrame.BackgroundTransparency = 0.08
+hudFrame.BorderSizePixel = 0
+hudFrame.Active = true
+hudFrame.Draggable = true
+hudFrame.Parent = hudGui
+
+local hudCorner = Instance.new("UICorner")
+hudCorner.CornerRadius = UDim.new(0, 10)
+hudCorner.Parent = hudFrame
+
+local hudGradient = Instance.new("UIGradient")
+hudGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 29, 42)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 14, 20)),
+})
+hudGradient.Rotation = 135
+hudGradient.Parent = hudFrame
+
+local hudStroke = Instance.new("UIStroke")
+hudStroke.Name = "BorderStroke"
+hudStroke.Color = Color3.fromRGB(70, 225, 130)
+hudStroke.Thickness = 1.4
+hudStroke.Transparency = 0.2
+hudStroke.Parent = hudFrame
+
+local topAccent = Instance.new("Frame")
+topAccent.Size = UDim2.new(1, -20, 0, 2)
+topAccent.Position = UDim2.fromOffset(10, 4)
+topAccent.BackgroundColor3 = Color3.fromRGB(70, 225, 130)
+topAccent.BorderSizePixel = 0
+topAccent.Parent = hudFrame
+
+local accentCorner = Instance.new("UICorner")
+accentCorner.CornerRadius = UDim.new(1, 0)
+accentCorner.Parent = topAccent
+
+local brandLabel = Instance.new("TextLabel")
+brandLabel.Size = UDim2.new(0, 165, 0, 16)
+brandLabel.Position = UDim2.fromOffset(10, 8)
+brandLabel.BackgroundTransparency = 1
+brandLabel.Text = "CVI // @" .. LocalPlayer.Name
+brandLabel.TextColor3 = Color3.fromRGB(235, 242, 255)
+brandLabel.TextXAlignment = Enum.TextXAlignment.Left
+brandLabel.Font = Enum.Font.GothamBold
+brandLabel.TextSize = 10
+brandLabel.Parent = hudFrame
+
+local statusBadge = Instance.new("TextLabel")
+statusBadge.Size = UDim2.new(0, 118, 0, 18)
+statusBadge.Position = UDim2.new(1, -128, 0, 8)
+statusBadge.BackgroundColor3 = Color3.fromRGB(22, 54, 36)
+statusBadge.Text = "SAFE"
+statusBadge.TextColor3 = Color3.fromRGB(115, 250, 155)
+statusBadge.Font = Enum.Font.GothamBold
+statusBadge.TextSize = 9
+statusBadge.Parent = hudFrame
+
+local badgeCorner = Instance.new("UICorner")
+badgeCorner.CornerRadius = UDim.new(0, 6)
+badgeCorner.Parent = statusBadge
+
+local divider = Instance.new("Frame")
+divider.Size = UDim2.new(1, -20, 0, 1)
+divider.Position = UDim2.fromOffset(10, 29)
+divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+divider.BackgroundTransparency = 0.88
+divider.BorderSizePixel = 0
+divider.Parent = hudFrame
+
+local rosterLabel = Instance.new("TextLabel")
+rosterLabel.Size = UDim2.new(1, -20, 0, 42)
+rosterLabel.Position = UDim2.fromOffset(10, 32)
+rosterLabel.BackgroundTransparency = 1
+rosterLabel.RichText = true
+rosterLabel.TextWrapped = true
+rosterLabel.TextYAlignment = Enum.TextYAlignment.Top
+rosterLabel.TextXAlignment = Enum.TextXAlignment.Left
+rosterLabel.Font = Enum.Font.GothamMedium
+rosterLabel.TextSize = 10
+rosterLabel.TextColor3 = Color3.fromRGB(220, 226, 240)
+rosterLabel.Text = "Scanning..."
+rosterLabel.Parent = hudFrame
+
+local function setDangerVisuals(isDanger, closestDist)
+	local targetStrokeColor = isDanger and Color3.fromRGB(255, 45, 55) or Color3.fromRGB(70, 225, 130)
+	local targetBadgeBg = isDanger and Color3.fromRGB(85, 18, 24) or Color3.fromRGB(22, 54, 36)
+	local targetBadgeText = isDanger and Color3.fromRGB(255, 110, 115) or Color3.fromRGB(115, 250, 155)
+
+	TweenService:Create(hudStroke, TweenInfo.new(0.2), { Color = targetStrokeColor }):Play()
+	TweenService:Create(topAccent, TweenInfo.new(0.2), { BackgroundColor3 = targetStrokeColor }):Play()
+	TweenService:Create(statusBadge, TweenInfo.new(0.2), { BackgroundColor3 = targetBadgeBg }):Play()
+	statusBadge.TextColor3 = targetBadgeText
+
+	if isDanger then
+		statusBadge.Text = string.format("MONSTER %d STUDS", math.floor(closestDist))
+	else
+		statusBadge.Text = "SAFE"
+	end
+end
+
+task.spawn(function()
+	while hudGui.Parent do
+		local runners = {}
+		local monsters = {}
+		local closestMonsterDist = math.huge
+
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if isPlayerMonster(plr) then
+				local dist = getDistanceStuds(plr)
+				local distStr = ""
+				if dist then
+					distStr = string.format(" [%d studs]", dist)
+					if dist < closestMonsterDist then
+						closestMonsterDist = dist
+					end
+				end
+				table.insert(monsters, plr.Name .. distStr)
+			elseif plr ~= LocalPlayer then
+				table.insert(runners, plr.Name)
+			end
+		end
+
+		local monsterText = #monsters > 0
+			and ("<font color=\"rgb(255,80,85)\"><b>Monster:</b> " .. table.concat(monsters, ", ") .. "</font>")
+			or "<font color=\"rgb(255,140,140)\"><b>Monster:</b> None / Selecting</font>"
+
+		local runnerText = #runners > 0
+			and ("<font color=\"rgb(95,245,135)\"><b>Runners (" .. #runners .. "):</b></font> " .. table.concat(runners, ", "))
+			or "<font color=\"rgb(160,170,190)\"><b>Runners (0):</b> None</font>"
+
+		rosterLabel.Text = monsterText .. "\n" .. runnerText
+
+		local monsterNearby = closestMonsterDist <= DANGER_DISTANCE
+		setDangerVisuals(monsterNearby, closestMonsterDist)
+
+		task.wait(0.25)
+	end
+end)
+
+-- ==================== TELEPORTS TAB ====================
+
+MainTab:CreateButton({
+	name = "Classes Shop (Auto Prompt + Return)",
+	callback = function()
+		teleportAndPrompt(Coords.ClassesShop, "class")
+	end,
+})
+
+MainTab:CreateButton({
+	name = "Customiser Shop (Auto Prompt + Return)",
+	callback = function()
+		teleportAndPrompt(Coords.CustomiserShop, "custom")
+	end,
+})
+
+MainTab:CreateButton({
+	name = "Obby Area",
+	callback = function()
+		teleportTo(Coords.ObbyArea)
+	end,
+})
+
+MainTab:CreateButton({
+	name = "Start Area",
+	callback = function()
+		teleportTo(Coords.StartArea)
+	end,
+})
+
+-- Player Selection Dropdown: Runner (number) Username
+local selectedPlayerEntry = nil
+local playerEntryMap = {}
+
+local function buildPlayerSelectionList()
+	local options = {}
+	table.clear(playerEntryMap)
+
+	local runnerCount = 0
+	local monsterCount = 0
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer then
+			local label
+			if isPlayerMonster(plr) then
+				monsterCount += 1
+				label = string.format("Monster (%d) %s", monsterCount, plr.Name)
+			else
+				runnerCount += 1
+				label = string.format("Runner (%d) %s", runnerCount, plr.Name)
+			end
+			table.insert(options, label)
+			playerEntryMap[label] = plr
+		end
+	end
+
+	if #options == 0 then
+		table.insert(options, "No other players")
+	end
+
+	return options
+end
+
+local initialPlayerOptions = buildPlayerSelectionList()
+selectedPlayerEntry = initialPlayerOptions[1]
+
+local playerDropdown = MainTab:CreateDropdown({
+	name = "Select Player",
+	options = initialPlayerOptions,
+	currentOption = { initialPlayerOptions[1] },
+	multipleOptions = false,
+	callback = function(option)
+		local chosen = type(option) == "table" and option[1] or option
+		selectedPlayerEntry = chosen
+	end,
+})
+
+MainTab:CreateButton({
+	name = "Refresh Players",
+	callback = function()
+		local updated = buildPlayerSelectionList()
+		selectedPlayerEntry = updated[1]
+		pcall(function()
+			if playerDropdown and playerDropdown.Refresh then
+				playerDropdown:Refresh(updated, { updated[1] })
+			end
+		end)
+	end,
+})
+
+MainTab:CreateButton({
+	name = "Teleport To",
+	callback = function()
+		local targetPlr = selectedPlayerEntry and playerEntryMap[selectedPlayerEntry]
+		if not targetPlr or not targetPlr.Parent then
+			local updated = buildPlayerSelectionList()
+			pcall(function()
+				if playerDropdown and playerDropdown.Refresh then
+					playerDropdown:Refresh(updated, { updated[1] })
+				end
+			end)
+			targetPlr = updated[1] and playerEntryMap[updated[1]]
+		end
+
+		if targetPlr then
+			local targetRoot = getRoot(targetPlr)
+			local myRoot = getRoot(LocalPlayer)
+			if targetRoot and myRoot then
+				myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, -4)
+			end
+		end
+	end,
+})
+
+-- Get All: Loops through players inside their body and waits until each target dies before moving on
+local getAllEnabled = false
+local getAllThread = nil
+
+local function isPlayerAlive(plr)
+	if not plr or not plr.Parent or plr == LocalPlayer then
+		return false
+	end
+	local char = plr.Character
+	if not char or not char.Parent then
+		return false
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 or hum:GetState() == Enum.HumanoidStateType.Dead then
+		return false
+	end
+	return getRoot(plr) ~= nil
+end
+
+local function followUntilDead(targetPlr)
+	while getAllEnabled and isPlayerAlive(targetPlr) do
+		local myRoot = getRoot(LocalPlayer)
+		local tRoot = getRoot(targetPlr)
+		if myRoot and tRoot then
+			myRoot.CFrame = tRoot.CFrame
+		end
+		task.wait(0.05)
+	end
+end
+
+MainTab:CreateToggle({
+	name = "Get All (TP Loop - Wait Until Dead)",
+	callback = function(value)
+		getAllEnabled = value
+		if getAllEnabled then
+			getAllThread = task.spawn(function()
+				while getAllEnabled do
+					local queue = {}
+					for _, plr in ipairs(Players:GetPlayers()) do
+						if plr ~= LocalPlayer and isPlayerAlive(plr) then
+							table.insert(queue, plr)
+						end
+					end
+
+					if #queue == 0 then
+						task.wait(0.4)
+					else
+						for _, targetPlr in ipairs(queue) do
+							if not getAllEnabled then break end
+							if isPlayerAlive(targetPlr) then
+								followUntilDead(targetPlr)
+							end
+							task.wait(0.1)
+						end
+					end
+				end
+			end)
+		else
+			if getAllThread then
+				task.cancel(getAllThread)
+				getAllThread = nil
+			end
+		end
+	end,
+})
+
+-- ==================== VISUALS & PLAYER TAB ====================
+
+-- All Players ESP: Runners = Green, Monster = Red + Small Username & Studs (Refreshes every 1s)
+local espEnabled = false
+local espThread = nil
+
+local function clearAllESP()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr.Character then
+			local hl = plr.Character:FindFirstChild("CVI_PlayerESP")
+			if hl then hl:Destroy() end
+			local tag = plr.Character:FindFirstChild("CVI_PlayerTag")
+			if tag then tag:Destroy() end
+		end
+	end
+end
+
+local function ensureSmallPlayerTag(char)
+	local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+	if not head then return nil end
+
+	local tag = char:FindFirstChild("CVI_PlayerTag")
+	if not tag then
+		tag = Instance.new("BillboardGui")
+		tag.Name = "CVI_PlayerTag"
+		tag.Adornee = head
+		tag.Size = UDim2.fromOffset(125, 20)
+		tag.StudsOffset = Vector3.new(0, 2.2, 0)
+		tag.AlwaysOnTop = true
+		tag.Parent = char
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Name = "TagLabel"
+		lbl.Size = UDim2.fromScale(1, 1)
+		lbl.BackgroundTransparency = 1
+		lbl.Font = Enum.Font.GothamBold
+		lbl.TextSize = 10
+		lbl.TextStrokeTransparency = 0.3
+		lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		lbl.Parent = tag
+	end
+
+	return tag:FindFirstChild("TagLabel")
+end
+
+local function updateAllPlayersESP()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character then
+			local char = plr.Character
+			local monster = isPlayerMonster(plr)
+
+			local hl = char:FindFirstChild("CVI_PlayerESP")
+			if not hl then
+				hl = Instance.new("Highlight")
+				hl.Name = "CVI_PlayerESP"
+				hl.FillTransparency = 0.48
+				hl.OutlineTransparency = 0
+				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				hl.Parent = char
+			end
+
+			if monster then
+				hl.FillColor = Color3.fromRGB(255, 35, 40)
+				hl.OutlineColor = Color3.fromRGB(255, 130, 135)
+			else
+				hl.FillColor = Color3.fromRGB(45, 235, 95)
+				hl.OutlineColor = Color3.fromRGB(165, 255, 185)
+			end
+
+			local lbl = ensureSmallPlayerTag(char)
+			if lbl then
+				local dist = getDistanceStuds(plr)
+				local studText = dist and (tostring(dist) .. "st") or "?st"
+				lbl.Text = string.format("%s [%s]", plr.Name, studText)
+				lbl.TextColor3 = monster and Color3.fromRGB(255, 95, 100) or Color3.fromRGB(125, 255, 155)
+			end
+		end
+	end
+end
+
+VisualsTab:CreateToggle({
+	name = "ESP All Players (Runners Green / Monster Red - 1s)",
+	callback = function(value)
+		espEnabled = value
+		if espEnabled then
+			updateAllPlayersESP()
+			espThread = task.spawn(function()
+				while espEnabled do
+					task.wait(1)
+					if espEnabled then
+						updateAllPlayersESP()
+					end
+				end
+			end)
+		else
+			if espThread then
+				task.cancel(espThread)
+				espThread = nil
+			end
+			clearAllESP()
+		end
+	end,
+})
+
+-- Speed Boost with 10% - 90% Selection
+local speedBoostEnabled = false
+local selectedBoostPercent = 30
+local defaultWalkSpeed = 16
+local speedConn = nil
+
+VisualsTab:CreateDropdown({
+	name = "Speed Boost Selection",
+	options = { "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%" },
+	currentOption = { "30%" },
+	multipleOptions = false,
+	callback = function(option)
+		local chosen = type(option) == "table" and option[1] or option
+		local num = tonumber(tostring(chosen):match("(%d+)"))
+		if num then
+			selectedBoostPercent = num
+		end
+	end,
+})
+
+VisualsTab:CreateToggle({
+	name = "Speed Boost",
+	callback = function(value)
+		speedBoostEnabled = value
+		local char = LocalPlayer.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+		if speedBoostEnabled then
+			if hum and hum.WalkSpeed > 0 then
+				defaultWalkSpeed = hum.WalkSpeed
+			end
+			speedConn = RunService.Heartbeat:Connect(function()
+				local c = LocalPlayer.Character
+				local h = c and c:FindFirstChildOfClass("Humanoid")
+				if h then
+					local multiplier = 1 + (selectedBoostPercent / 100)
+					local targetSpeed = defaultWalkSpeed * multiplier
+					if math.abs(h.WalkSpeed - targetSpeed) > 0.5 then
+						h.WalkSpeed = targetSpeed
+					end
+				end
+			end)
+		else
+			if speedConn then
+				speedConn:Disconnect()
+				speedConn = nil
+			end
+			if hum then
+				hum.WalkSpeed = defaultWalkSpeed
+			end
+		end
+	end,
+})
+
+-- Difficult Game (Darker & Dense Fog)
+local origLighting = {
+	Brightness = Lighting.Brightness,
+	ClockTime = Lighting.ClockTime,
+	FogEnd = Lighting.FogEnd,
+	FogStart = Lighting.FogStart,
+	FogColor = Lighting.FogColor,
+	GlobalShadows = Lighting.GlobalShadows,
+	Ambient = Lighting.Ambient,
+	OutdoorAmbient = Lighting.OutdoorAmbient,
+}
+
+local hardModeEnabled = false
+local lightingConn = nil
+
+local function applyHardMode()
+	if hardModeEnabled then
+		Lighting.Brightness = 0
+		Lighting.ClockTime = 0
+		Lighting.FogStart = 0
+		Lighting.FogEnd = 32
+		Lighting.FogColor = Color3.fromRGB(5, 5, 8)
+		Lighting.GlobalShadows = true
+		Lighting.Ambient = Color3.fromRGB(8, 8, 12)
+		Lighting.OutdoorAmbient = Color3.fromRGB(5, 5, 8)
+	else
+		for prop, val in pairs(origLighting) do
+			Lighting[prop] = val
+		end
+	end
+end
+
+VisualsTab:CreateToggle({
+	name = "Difficult Game (Darker & Dense Fog)",
+	callback = function(value)
+		hardModeEnabled = value
+		applyHardMode()
+		if hardModeEnabled and not lightingConn then
+			lightingConn = RunService.RenderStepped:Connect(applyHardMode)
+		elseif not hardModeEnabled and lightingConn then
+			lightingConn:Disconnect()
+			lightingConn = nil
+		end
+	end,
+})
